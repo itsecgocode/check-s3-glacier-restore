@@ -21,7 +21,7 @@ if submitted:
         st.error("❌ Please fill in all required fields.")
     else:
         try:
-            # Create session
+            # Create boto3 session
             session = boto3.Session(
                 aws_access_key_id=access_key,
                 aws_secret_access_key=secret_key,
@@ -29,62 +29,78 @@ if submitted:
             )
             s3 = session.client('s3', config=Config(retries={'max_attempts': 10, 'mode': 'standard'}))
 
-            st.info("🔍 Scanning for restored Glacier/Deep Archive files...")
-
+            st.info("🔍 Counting total files...")
             paginator = s3.get_paginator('list_objects_v2')
-            pages = paginator.paginate(Bucket=bucket, Prefix=prefix)
+            total_files = 0
+            for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+                total_files += len(page.get('Contents', []))
 
-            restored_data = []
+            if total_files == 0:
+                st.warning("⚠️ No files found with the specified prefix.")
+            else:
+                st.info(f"📂 Found {total_files} file(s). Scanning for restored Glacier objects...")
 
-            for page in pages:
-                for obj in page.get('Contents', []):
-                    key = obj['Key']
+                pages = paginator.paginate(Bucket=bucket, Prefix=prefix)
+                progress = st.progress(0)
+                status = st.empty()
+                scanned = 0
+                restored_data = []
 
-                    try:
-                        head = s3.head_object(Bucket=bucket, Key=key)
-                    except:
-                        continue
-
-                    storage_class = head.get('StorageClass', 'STANDARD')
-                    restore_status = head.get('Restore')
-
-                    if not storage_class.startswith('GLACIER') and storage_class != 'DEEP_ARCHIVE':
-                        continue
-
-                    if restore_status and 'ongoing-request="false"' in restore_status:
-                        expiry = None
-                        if 'expiry-date=' in restore_status:
-                            expiry_str = restore_status.split('expiry-date="')[-1].split('"')[0]
-                            try:
-                                expiry_utc = datetime.strptime(expiry_str, "%a, %d %b %Y %H:%M:%S %Z")
-                                gmt8 = expiry_utc.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=8)))
-                                expiry = gmt8.strftime("%Y-%m-%d %H:%M:%S GMT+8")
-                            except:
-                                expiry = expiry_str or "Unknown"
+                for page in pages:
+                    for obj in page.get('Contents', []):
+                        key = obj['Key']
+                        scanned += 1
+                        progress.progress(min(scanned / total_files, 1.0))
+                        status.text(f"🔍 Scanning: {key[-60:]}")
 
                         try:
-                            url = s3.generate_presigned_url(
-                                'get_object',
-                                Params={'Bucket': bucket, 'Key': key},
-                                ExpiresIn=3600
-                            )
+                            head = s3.head_object(Bucket=bucket, Key=key)
                         except:
-                            url = "Error generating URL"
+                            continue
 
-                        restored_data.append({
-                            "File Key": key,
-                            "Storage Class": storage_class,
-                            "Expires (GMT+8)": expiry,
-                            "Download URL": f"<a href='{url}' target='_blank'>{url}</a>"
-                        })
+                        storage_class = head.get('StorageClass', 'STANDARD')
+                        restore_status = head.get('Restore')
 
-            if restored_data:
-                df = pd.DataFrame(restored_data)
-                st.success(f"✅ Found {len(restored_data)} restored file(s).")
+                        if not storage_class.startswith('GLACIER') and storage_class != 'DEEP_ARCHIVE':
+                            continue
 
-                # Show table with full clickable URL
-                st.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
-            else:
-                st.warning("⚠️ No restored files found.")
+                        if restore_status and 'ongoing-request="false"' in restore_status:
+                            expiry = None
+                            if 'expiry-date=' in restore_status:
+                                expiry_str = restore_status.split('expiry-date="')[-1].split('"')[0]
+                                try:
+                                    expiry_utc = datetime.strptime(expiry_str, "%a, %d %b %Y %H:%M:%S %Z")
+                                    gmt8 = expiry_utc.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=8)))
+                                    expiry = gmt8.strftime("%Y-%m-%d %H:%M:%S GMT+8")
+                                except:
+                                    expiry = expiry_str or "Unknown"
+
+                            try:
+                                url = s3.generate_presigned_url(
+                                    'get_object',
+                                    Params={'Bucket': bucket, 'Key': key},
+                                    ExpiresIn=3600
+                                )
+                            except:
+                                url = "Error generating URL"
+
+                            restored_data.append({
+                                "File Key": key,
+                                "Storage Class": storage_class,
+                                "Expires (GMT+8)": expiry,
+                                "Download URL": f"<a href='{url}' target='_blank'>{url}</a>"
+                            })
+
+                progress.empty()
+                status.empty()
+
+                if restored_data:
+                    df = pd.DataFrame(restored_data)
+                    st.success(f"✅ Found {len(restored_data)} restored file(s).")
+
+                    # Show table with clickable URL
+                    st.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+                else:
+                    st.warning("⚠️ No restored Glacier/Deep Archive files found.")
         except Exception as e:
             st.error(f"❌ Error: {e}")
