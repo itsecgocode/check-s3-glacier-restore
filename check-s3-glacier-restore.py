@@ -10,7 +10,7 @@ st.title("📦 S3 Glacier Restored File Checker")
 # --- Step 1: User Inputs ---
 with st.form("credentials_form"):
     access_key = st.text_input("🔑 AWS Access Key ID")
-    secret_key = st.text_input("🔐 AWS Secret Access Key", type="password")
+    secret_key = st.text_input("🔐 AWS Secret Access Key")
     region = st.text_input("🌍 AWS Region", value="ap-southeast-1")
     bucket = st.text_input("🪣 S3 Bucket Name")
     prefix = st.text_input("📁 Folder Prefix (e.g. logs/2025/ or blank for full bucket)", value="")
