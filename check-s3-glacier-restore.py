@@ -249,3 +249,13 @@ if 'aws_access_key' in st.session_state:
 
     except Exception as e:
         st.error(f"❌ Error: {e}")
+
+st.markdown("""
+<style>
+    /* Hide Streamlit branding */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    .stDeployButton {display: none;}
+</style>
+""", unsafe_allow_html=True)
