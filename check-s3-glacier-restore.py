@@ -233,8 +233,8 @@ if 'aws_access_key' in st.session_state:
                     st.session_state.manual_refresh_clicked = False
                     st.stop()
 
-                refresh_interval = 60
-                max_checks = 10
+                refresh_interval = 30
+                max_checks = 20
                 for attempt in range(max_checks):
                     df_status = check_restore_status(s3, bucket, st.session_state.selected_keys)
                     table_placeholder.table(df_status)
